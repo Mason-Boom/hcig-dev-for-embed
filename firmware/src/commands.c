@@ -60,7 +60,7 @@ void generate_list_files(list_response_t *file_list) {
  * @return 0 upon success. A negative value on error.
 */
 int list(uint16_t pkt_len, uint8_t *buf) {
-    list_command_t *command = (list_command_t*)buf;
+    list_command_t *command = (list_command_t*)buf; // this buffer (which includes the pin) is never cleared... interesting
     list_response_t file_list;
 
     memset(&file_list, 0, sizeof(file_list));
