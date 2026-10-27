@@ -9,9 +9,14 @@ BUILDDIR ?= /tmp/build
 VPATH = "src"
 LINKERFILE = "firmware.ld"
 
-# to download wolfssl for the simple crypto example, `cd ./firmware/ && git clone https://github.com/wolfSSL/wolfssl`
-# then set this variable to 1
+# Simple crypto example (optional); when 1, simple_crypto.c is built (requires USE_AESADV_GCM)
 CRYPTO_EXAMPLE = 0
+
+# PIN unwrap (PBKDF2 + GCM) for PIN-based auth (default 1). Uses WolfSSL only for this path.
+PIN_UNWRAP ?= 1
+
+# WolfSSL: only for PIN unwrap (PBKDF2 + AES-GCM). Clone: cd firmware && git clone https://github.com/wolfSSL/wolfssl
+WOLFSSL_PU_DIR = wolfssl/wolfcrypt/src
 
 OBJECTS = $(BUILDDIR)/HSM.so \
     $(BUILDDIR)/simple_uart.so \
@@ -21,33 +26,23 @@ OBJECTS = $(BUILDDIR)/HSM.so \
     $(BUILDDIR)/host_messaging.so \
     $(BUILDDIR)/security.so \
     $(BUILDDIR)/filesystem.so \
-    $(BUILDDIR)/commands.so
+    $(BUILDDIR)/commands.so \
 
 ifeq ($(CRYPTO_EXAMPLE), 1)
 OBJECTS += $(BUILDDIR)/simple_crypto.so
-
-# change C flags
 CFLAGS += -DCRYPTO_EXAMPLE=1
-CFLAGS += -DNO_WOLFSSL_DIR
-CFLAGS += -DWOLFSSL_AES_DIRECT
-CFLAGS += -DSINGLE_THREADED
-# From https://www.wolfssl.com/documentation/manuals/wolfssl/chapter02.html#building-with-gcc-arm
-CFLAGS += -DHAVE_PK_CALLBACKS
-CFLAGS += -DWOLFSSL_USER_IO
-CFLAGS += -DNO_WRITEV -DTIME_T_NOT_64BIT
-CFLAGS += -DNO_FILESYSTEM
-# tells wolfssl that we will handle RNG on the baremetal target
-# user will need to implement the callbacks
-CFLAGS += -DNO_DEV_RANDOM
-CFLAGS += -DWC_NO_DEFAULT_DEVID
-CFLAGS += -DWOLF_CRYPTO_CB
+endif
 
-WOLFSSL_INC = wolfssl/wolfcrypt/src
-CFLAGS += -I./wolfssl
 
-# we need to build these objects for the simple crypto example
-OBJECTS += $(WOLFSSL_INC)/aes.o $(WOLFSSL_INC)/hash.o
-OBJECTS += $(WOLFSSL_INC)/md5.o $(WOLFSSL_INC)/cryptocb.o
+ifeq ($(PIN_UNWRAP), 1)
+# WolfSSL: include path and flags for PBKDF2 + AES-GCM only
+CFLAGS += -I./wolfssl -DWOLFSSL_USER_SETTINGS -DNO_WOLFSSL_DIR -DSINGLE_THREADED
+CFLAGS += -DNO_FILESYSTEM -DNO_WRITEV -DTIME_T_NOT_64BIT
+CFLAGS += -DHAVE_AESGCM -DWOLFSSL_AESGCM_STREAM
+OBJECTS += $(BUILDDIR)/pwdbased.o $(BUILDDIR)/sha256.o $(BUILDDIR)/sha.o $(BUILDDIR)/hmac.o $(BUILDDIR)/hash.o $(BUILDDIR)/md5.o $(BUILDDIR)/aes.o $(BUILDDIR)/curve25519.o $(BUILDDIR)/random.o $(BUILDDIR)/fe_operations.o $(BUILDDIR)/ed25519.o $(BUILDDIR)/sha512.o $(BUILDDIR)/ge_operations.o
+ifneq ($(PIN_UNWRAP_USE_AESADV),)
+CFLAGS += -DPIN_UNWRAP_USE_AESADV
+endif
 endif
 
 NAME = hsm
@@ -85,9 +80,45 @@ $(BUILDDIR)/%.so: ./src/%.c | $(BUILDDIR)
 	@ echo Building $@
 	@ $(CC) $(CFLAGS) -c $< -o $@
 
-# if compiling with the crypto example, compile all crypto objects
-ifeq ($(CRYPTO_EXAMPLE), 1)
-$(WOLFSSL_INC)/%.o: $(WOLFSSL_INC)/%.c
+# WolfSSL objects
+ifeq ($(PIN_UNWRAP), 1)
+$(BUILDDIR)/pwdbased.o: $(WOLFSSL_PU_DIR)/pwdbased.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/sha256.o: $(WOLFSSL_PU_DIR)/sha256.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/sha.o: $(WOLFSSL_PU_DIR)/sha.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/hmac.o: $(WOLFSSL_PU_DIR)/hmac.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/hash.o: $(WOLFSSL_PU_DIR)/hash.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/md5.o: $(WOLFSSL_PU_DIR)/md5.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/aes.o: $(WOLFSSL_PU_DIR)/aes.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/curve25519.o: $(WOLFSSL_PU_DIR)/curve25519.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/random.o: $(WOLFSSL_PU_DIR)/random.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/fe_operations.o: $(WOLFSSL_PU_DIR)/fe_operations.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/ed25519.o: $(WOLFSSL_PU_DIR)/ed25519.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/sha512.o: $(WOLFSSL_PU_DIR)/sha512.c | $(BUILDDIR)
+	@ echo Building $@
+	@ $(CC) $(CFLAGS) -c $< -o $@
+$(BUILDDIR)/ge_operations.o: $(WOLFSSL_PU_DIR)/ge_operations.c | $(BUILDDIR)
 	@ echo Building $@
 	@ $(CC) $(CFLAGS) -c $< -o $@
 endif
