@@ -15,9 +15,13 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
+
 
 #define MAX_PERMS 8
 #define PIN_LENGTH 6
+
+typedef unsigned char byte;
 
 typedef enum {
     PERM_READ = 'R',
@@ -48,5 +52,8 @@ bool check_pin(unsigned char *pin);
  *  @return True if the HSM has the correct permission. False if not.
 */
 bool validate_permission(uint16_t group_id, permission_enum_t perm);
+
+int ConstantCompare(const byte*, const byte*, int);
+bool check_pbkdf2_pin(unsigned char *);
 
 #endif  // __SECURITY_H__
