@@ -15,6 +15,15 @@ import json
 import argparse
 from dataclasses import dataclass
 
+import hashlib
+
+PBKDF_ITERATIONS = 500
+PBKDF_SALT_LEN = 16
+# Fixed salt (same for all builds so device can verify)
+PBKDF_SALT = bytes([
+    0x5a, 0x9e, 0x2c, 0x1f, 0x8b, 0x4d, 0x3e, 0x6a,
+    0x7c, 0x0f, 0xb1, 0xe4, 0x92, 0x58, 0xd6, 0xa3,
+])
 
 @dataclass
 class Permission:
@@ -81,6 +90,37 @@ class PermissionList(list):
     def serialize(self):
         return ':'.join(perm.serialize() for perm in self)
 
+def format_hardcoded_pin(hsm_pin: str):
+
+    pin_string = "{"
+
+    for letter in hsm_pin:
+        pin_string += str(ord(letter)) + ","
+
+    pin_string = pin_string[:-1] + "}"
+
+    return pin_string
+
+
+# PBKDF2
+
+def pbkdf_pin(hsm_pin: str):
+    # Derive KEK from PIN
+    kek = hashlib.pbkdf2_hmac(
+        "sha256",
+        hsm_pin.encode("utf-8"),
+        PBKDF_SALT,
+        PBKDF_ITERATIONS,
+        dklen=32,
+    )
+
+    kek = format_hex_array(kek)
+
+    return kek
+
+def format_hex_array(data: bytes) -> str:
+    """Formats bytes into a C-style hex string array."""
+    return ", ".join(f"0x{b:02x}" for b in data)
 
 def secrets_to_c_header(
     permissions: PermissionList, path: str, hsm_pin: str, secrets: bytes
@@ -91,7 +131,20 @@ def secrets_to_c_header(
         f.write("#ifndef __SECRETS_H__\n")
         f.write("#define __SECRETS_H__\n\n")
         f.write('#include "security.h"\n\n')
-        f.write(f'#define HSM_PIN "{hsm_pin}"\n\n')
+
+# Plaintext PIN
+        f.write(f"static const uint8_t HSM_PIN[6] = {format_hardcoded_pin(hsm_pin)};\n\n")
+
+# Const. Compare. Var Pass
+        f.write("#define CON_CMP_PASS 0xBAD1E\n\n")
+
+# PBKDF2 Portion
+        f.write(f"static const uint8_t HSM_PBKDF_PIN[32] = {{{pbkdf_pin(hsm_pin)}}};\n\n")
+
+        f.write(f"#define HSM_PIN_SALT_LEN {PBKDF_SALT_LEN}\n")
+        f.write(f"#define HSM_PIN_ITERATIONS {PBKDF_ITERATIONS}\n")
+        f.write(f"static const uint8_t HSM_PIN_SALT[HSM_PIN_SALT_LEN] = {{{format_hex_array(PBKDF_SALT)}}};\n\n")
+        
         f.write("const static group_permission_t global_permissions[MAX_PERMS] = {\n")
         for i, perm in enumerate(permissions):
             f.write(
